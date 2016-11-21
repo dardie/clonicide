@@ -1,0 +1,10 @@
+[package]
+name = "dedupe"
+version = "0.1.0"
+authors = ["drees"]
+
+[dependencies]
+twox-hash = "1.0.0"
+clap = "2.14.0"
+walkdir = "0.1"
+rust-crypto = "^0.2"
