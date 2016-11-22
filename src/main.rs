@@ -1,19 +1,21 @@
-extern crate twox_hash;
+//extern crate twox_hash;
 #[macro_use]
 extern crate clap;
 extern crate walkdir;
 extern crate crypto;
 
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use std::path::Path;
 use std::process;
 use std::io::prelude::*;
 use std::io;
+use std::io::stdout;
 use std::io::BufReader;
 use std::fs::File;
-use twox_hash::RandomXxHashBuilder;
+//use twox_hash::RandomXxHashBuilder;
 use clap::{Arg, App};
 use walkdir::WalkDir;
+use std::collections::BTreeMap;
 
 fn get_args() -> String {
     let matches = App::new("dedup")
@@ -70,7 +72,6 @@ fn hashsum(fpath: &str) -> Result<String, io::Error> {
         reader.consume(length);
     }
     let hash = hasher.result_str();
-    println!("{}:   {}", &hash, fpath);
     Ok(hash)
 }
 
@@ -81,15 +82,33 @@ fn main() {
         process::exit(0);
     } 
 
-    println!("Hello, world!");
-    let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
-    hash.insert(42, "the answer");
-    assert_eq!(hash.get(&42), Some(&"the answer"));
+    struct FileInfo {
+        name: String,
+        size: u64
+    }
+    let mut file_idx = BTreeMap::new();
 
+    let mut num_indexed = 0;
+
+    println!("Files Indexed: ");
     for entry in WalkDir::new(&d).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path().to_str();
-        if path.is_some() {
-            let _ = hashsum(path.unwrap());
+        let maybe_path = entry.path().to_str();
+        match maybe_path {
+            Some(path) => {
+                let file_size = 0;
+                let maybe_hash = hashsum(path);
+                match maybe_hash {
+                    Ok(hash) =>  { file_idx.insert(hash, FileInfo {name: path.to_string(), size: file_size}); }
+                    _ => {}
+                }
+                num_indexed = num_indexed + 1;
+                if num_indexed % 100 == 0 {
+                    print!("\r{} : {}                 ", num_indexed, path);
+                    stdout().flush().expect("Error writing to terminal");
+                }
+            }
+            None => {}
         }
+
     }
 }
