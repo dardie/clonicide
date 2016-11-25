@@ -15,7 +15,7 @@ use std::fs::File;
 //use twox_hash::RandomXxHashBuilder;
 use clap::{Arg, App};
 use walkdir::WalkDir;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 fn get_args() -> String {
     let matches = App::new("dedup")
@@ -76,46 +76,6 @@ fn hashsum(fpath: &str) -> Result<String, io::Error> {
     Ok(hash)
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
-struct FileInfo {
-    dir: String,
-    name: String,
-    size: u64
-}
-
-fn index_by_filehash(filepath: &Path, file_idx: &mut HashMap<String, FileInfo>) {
-    match (
-        filepath.to_str(), // path
-        filepath.parent().and_then( |p| p.to_str() ), //dir
-        filepath.file_name().and_then( |p| p.to_str() ), //name
-        filepath.metadata() //metadata
-    )
-    {
-        (
-            Some(path),
-            Some(dir),
-            Some(name),
-            Ok(metadata)
-        ) => {
-            if metadata.is_file() {
-                match hashsum(path) {  // maybe change to and_then, and return an option?
-                    Ok(hash) =>  {
-                        let info = FileInfo {
-                            dir: dir.to_string(),
-                            name: name.to_string(),
-                            size: metadata.len()
-                        };
-                        file_idx.insert (hash.to_string(), info);
-                    }
-                    _ => {}
-                }     
-            }       
-        }
-        _ => {}
-    }
-}
-
-
 fn main() {
     let d=get_args();
     if !Path::new(&d).is_dir() {
@@ -123,17 +83,40 @@ fn main() {
         process::exit(0);
     } 
 
-    let mut file_idx:HashMap<String, FileInfo> = HashMap::new();
+    struct FileInfo {
+        dir: String,
+        name: String,
+        size: u64
+    }
+    let mut file_idx = BTreeMap::new();
+
     let mut num_indexed = 0;
 
     println!("Files Indexed: ");
     for entry in WalkDir::new(&d).into_iter().filter_map(|e| e.ok()) {
-        index_by_filehash(entry.path(), &mut file_idx);
-
-        num_indexed = num_indexed + 1;
-        if num_indexed % 100 == 0 {
-            print!("\r{} : {}                 ", num_indexed, entry.path().to_str().unwrap_or("                         "));
-            stdout().flush().expect("Error writing to terminal");
+        let maybe_path = entry.path().to_str();
+        let maybe_dir = entry.path().parent().and_then( |p| p.to_str() );
+        let maybe_name = entry.path().file_name().and_then( |p| p.to_str() );
+        //let maybe_metadata = entry.path().metadata().ok();
+        let maybe_metadata=Some("blah");
+        match (maybe_path, maybe_dir, maybe_name, maybe_metadata) {
+            (Some(path), Some(dir), Some(name), Some(metadata)) => {
+                //let file_size = metadata.len();
+                let file_size = 0;
+                //let file_type = metadata.file_type();
+                //if file_type.is_file() {
+                    match hashsum(path) {
+                        Ok(hash) =>  { file_idx.insert(hash, FileInfo {dir: dir.to_string(), name: name.to_string(), size: file_size}); }
+                        _ => {}
+                    }
+                    num_indexed = num_indexed + 1;
+                    if num_indexed % 100 == 0 {
+                        print!("\r{} : {}                 ", num_indexed, path);
+                        stdout().flush().expect("Error writing to terminal");
+                    }
+             //   }
+            }
+            _ => {}
         }
     }
 }
