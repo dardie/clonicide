@@ -16,6 +16,7 @@ use std::fs::File;
 use clap::{Arg, App};
 use walkdir::WalkDir;
 use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 fn get_args() -> String {
     let matches = App::new("dedup")
@@ -51,14 +52,12 @@ fn get_args() -> String {
     searchdir
 }
 
-use crypto::md5::Md5;
+use crypto::md5::Md5; //Try Seahash, and use .result instead of .result_str
 use crypto::digest::Digest;
 
 fn hashsum(fpath: &str) -> Result<String, io::Error> {
-
     let mut hasher = Md5::new();
-
-    const BUFSIZE: usize = 1024 * 4;
+    const BUFSIZE: usize = 1024 * 4; // Empirically, faster than 1K and 16K
     let file = File::open(fpath)?;
     let mut reader = BufReader::with_capacity(BUFSIZE, file);
 
@@ -83,9 +82,31 @@ struct FileInfo {
     size: u64
 }
 
+type FileList = Vec<FileInfo>;
+
+#[derive(Eq,PartialEq,PartialOrd,Ord)]
+// The 'Value' for MatchedPairIndex
+struct MatchedFilePair {
+    hash: String,
+    dir1_names: String, // change to vec of strings, files with same hash within dir
+    dir2_names: String // change to vec of strings
+}
+
+// The 'Key' for MatchedPairIndex
+type MatchedDirPair = (String, String); //(Dir1, Dir2);
 //static dir_idx: HashMap<String, Option<String>> = HashMap::new();
 
-fn index_by_filehash(filepath: &Path, file_idx: &mut HashMap<String, FileInfo>) {
+fn add_matched_pair(file_hash:&str, file1: &FileInfo, file2: &FileInfo, matched_pair_idx: &mut BTreeMap<MatchedDirPair, MatchedFilePair>) {
+    let key = (file1.dir.clone(), file2.dir.clone());
+    let val = MatchedFilePair {
+        hash: file_hash.to_string(),
+        dir1_names: file1.name.clone(),
+        dir2_names: file2.name.clone()
+    };
+    matched_pair_idx.insert(key, val);
+}
+
+fn index_by_filehash(filepath: &Path, file_idx: &mut HashMap<String, FileList>) {
     if let (
         Some(path),
         Some(dir),
@@ -100,12 +121,13 @@ fn index_by_filehash(filepath: &Path, file_idx: &mut HashMap<String, FileInfo>) 
     {
         if metadata.is_file() {
             if let Ok(hash) = hashsum(path) {
-                let info = FileInfo {
+                let file_rec = FileInfo {
                     dir: dir.to_string(),
                     name: name.to_string(),
                     size: metadata.len()
                 };
-                file_idx.insert (hash.to_string(), info);
+                let files_matching_hash:&mut FileList = file_idx.entry(hash).or_insert( Vec::new() );
+                files_matching_hash.push(file_rec);
             }     
         }       
     }
@@ -118,8 +140,7 @@ fn main() {
         process::exit(0);
     } 
 
-
-    let mut file_idx:HashMap<String, FileInfo> = HashMap::new();
+    let mut file_idx:HashMap<String, FileList> = HashMap::new();
     let mut num_indexed = 0;
 
     println!("Files Indexed: ");
@@ -131,5 +152,12 @@ fn main() {
             print!("\r{} : {}                 ", num_indexed, entry.path().to_str().unwrap_or("                         "));
             stdout().flush().expect("Error writing to terminal");
         }
+    }
+
+    println!("Collating folders..");
+    let mut matched_pair_idx = BTreeMap::new();
+    for (hashkey, file_list) in file_idx.iter().filter(|&(_,v)| v.len() >= 2) {
+        println!("Adding hash {:?} file1 {:?} file2 {:?} to matched pair idx", &hashkey, &file_list[0], &file_list[1] );
+        add_matched_pair(&hashkey, &file_list[0], &file_list[1], &mut matched_pair_idx);
     }
 }
