@@ -83,38 +83,33 @@ struct FileInfo {
     size: u64
 }
 
+//static dir_idx: HashMap<String, Option<String>> = HashMap::new();
+
 fn index_by_filehash(filepath: &Path, file_idx: &mut HashMap<String, FileInfo>) {
-    match (
+    if let (
+        Some(path),
+        Some(dir),
+        Some(name),
+        Ok(metadata)
+    ) = (
         filepath.to_str(), // path
         filepath.parent().and_then( |p| p.to_str() ), //dir
         filepath.file_name().and_then( |p| p.to_str() ), //name
         filepath.metadata() //metadata
     )
     {
-        (
-            Some(path),
-            Some(dir),
-            Some(name),
-            Ok(metadata)
-        ) => {
-            if metadata.is_file() {
-                match hashsum(path) {  // maybe change to and_then, and return an option?
-                    Ok(hash) =>  {
-                        let info = FileInfo {
-                            dir: dir.to_string(),
-                            name: name.to_string(),
-                            size: metadata.len()
-                        };
-                        file_idx.insert (hash.to_string(), info);
-                    }
-                    _ => {}
-                }     
-            }       
-        }
-        _ => {}
+        if metadata.is_file() {
+            if let Ok(hash) = hashsum(path) {
+                let info = FileInfo {
+                    dir: dir.to_string(),
+                    name: name.to_string(),
+                    size: metadata.len()
+                };
+                file_idx.insert (hash.to_string(), info);
+            }     
+        }       
     }
 }
-
 
 fn main() {
     let d=get_args();
@@ -122,6 +117,7 @@ fn main() {
         println!("Specified path '{}' is not a directory", &d);
         process::exit(0);
     } 
+
 
     let mut file_idx:HashMap<String, FileInfo> = HashMap::new();
     let mut num_indexed = 0;
